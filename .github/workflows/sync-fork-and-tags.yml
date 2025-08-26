@@ -1,0 +1,260 @@
+name: Sync Fork and Push Tags
+
+# This workflow syncs your fork with the upstream repository and pushes matching tags.
+# Default tags synced: azure-core-http-netty_* and azure-identity_*
+#
+# SETUP REQUIRED:
+# 1. Create a Personal Access Token (PAT):
+#    - Go to GitHub Settings > Developer settings > Personal access tokens > Tokens (classic)
+#    - Click "Generate new token (classic)"
+#    - Give it a name like "Fork Sync"
+#    - Select scopes: 'repo' (full control of private repositories)
+#    - Generate and copy the token
+#
+# 2. Add the PAT to your fork's secrets:
+#    - Go to your fork's Settings > Secrets and variables > Actions
+#    - Click "New repository secret"
+#    - Name: PAT
+#    - Value: paste your personal access token
+#    - Click "Add secret"
+#
+# The workflow will use the PAT to access both your fork and the upstream repository.
+#
+# RUNNER OPTIONS:
+# - Default: ubuntu-latest (GitHub-hosted)
+# - Can use self-hosted runners by specifying 'self-hosted' in the runs_on input
+# - For scheduled runs, will always use the default runner (ubuntu-latest)
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      tag_prefixes:
+        description: 'Comma-separated list of tag prefixes to sync (e.g., azure-core-http-netty_*,azure-identity_*)'
+        required: false
+        type: string
+      sync_strategy:
+        description: 'Strategy for syncing fork with upstream'
+        required: false
+        default: 'rebase'
+        type: choice
+        options:
+          - rebase    # Rebase fork commits on top of upstream (recommended)
+          - force     # Reset fork to match upstream exactly (loses unique commits)
+          - merge     # Create merge commit (preserves history)
+      runs_on:
+        description: 'Runner type (e.g., ubuntu-latest, self-hosted)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+
+env:
+  # Default tag prefixes - can be overridden by workflow_dispatch input
+  DEFAULT_TAG_PREFIXES: 'azure-core-http-netty_*,azure-identity_*'
+
+jobs:
+  sync-fork-and-tags:
+    runs-on: ${{ github.event.inputs.runs_on || 'ubuntu-latest' }}
+
+    steps:
+      - name: Check PAT Configuration
+        run: |
+          if [ -z "${{ secrets.PAT }}" ]; then
+            echo "⚠️ WARNING: PAT secret is not configured!"
+            echo "The workflow may fail if the upstream repository is private or has restricted access."
+            echo ""
+            echo "To fix this:"
+            echo "1. Create a Personal Access Token at: https://github.com/settings/tokens/new"
+            echo "2. Add it as a secret named 'PAT' in your repository settings"
+            echo ""
+            echo "Attempting to continue with GITHUB_TOKEN..."
+          else
+            echo "✅ PAT is configured"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Configure git to use the token for authentication
+          TOKEN="${{ secrets.PAT || secrets.GITHUB_TOKEN }}"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Add upstream remote
+        run: |
+          # Get the parent repository (upstream/origin) URL
+          # This assumes your fork has the parent set correctly in GitHub
+          UPSTREAM_REPO=$(gh api repos/${{ github.repository }} --jq '.parent.full_name // empty')
+
+          if [ -z "$UPSTREAM_REPO" ]; then
+            echo "❌ This repository doesn't appear to be a fork. Exiting."
+            exit 1
+          fi
+
+          # Configure the upstream URL with authentication
+          # Use PAT if available, otherwise fall back to GITHUB_TOKEN
+          TOKEN="${{ secrets.PAT || secrets.GITHUB_TOKEN }}"
+          UPSTREAM_URL="https://x-access-token:${TOKEN}@github.com/${UPSTREAM_REPO}.git"
+
+          echo "Adding upstream remote: github.com/${UPSTREAM_REPO}"
+          git remote add upstream "$UPSTREAM_URL"
+
+          # Verify remotes (hide tokens in output)
+          echo "Current remotes:"
+          git remote -v | sed 's|https://.*@|https://***@|g'
+        env:
+          GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Sync fork from upstream
+        run: |
+          echo "📥 Fetching from upstream..."
+          git fetch upstream --prune --tags
+
+          echo "🔄 Syncing default branch..."
+          # Get the default branch name
+          DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/upstream/HEAD | sed 's@^refs/remotes/upstream/@@')
+          echo "Default branch: $DEFAULT_BRANCH"
+
+          # Checkout the default branch
+          git checkout $DEFAULT_BRANCH
+
+          # Determine sync strategy
+          SYNC_STRATEGY="${{ github.event.inputs.sync_strategy || 'rebase' }}"
+          echo "Using sync strategy: $SYNC_STRATEGY"
+
+          # Check if we can fast-forward
+          if git merge-base --is-ancestor upstream/$DEFAULT_BRANCH HEAD; then
+            echo "✅ Fork is ahead or equal to upstream, no sync needed for $DEFAULT_BRANCH"
+          elif git merge-base --is-ancestor HEAD upstream/$DEFAULT_BRANCH; then
+            echo "⏩ Fast-forwarding to upstream/$DEFAULT_BRANCH..."
+            git merge upstream/$DEFAULT_BRANCH --ff-only
+          else
+            echo "⚠️ Branches have diverged. Using strategy: $SYNC_STRATEGY"
+
+            case "$SYNC_STRATEGY" in
+              rebase)
+                echo "Rebasing fork commits on top of upstream..."
+                if git rebase upstream/$DEFAULT_BRANCH; then
+                  echo "✅ Rebase successful"
+                else
+                  echo "❌ Rebase failed due to conflicts"
+                  echo "Aborting rebase and falling back to force sync..."
+                  git rebase --abort
+                  echo "⚠️ Force syncing to match upstream (your commits will need to be reapplied)"
+                  git reset --hard upstream/$DEFAULT_BRANCH
+                fi
+                ;;
+              force)
+                echo "Force syncing to match upstream exactly..."
+                echo "⚠️ This will overwrite any unique commits in the fork!"
+                git reset --hard upstream/$DEFAULT_BRANCH
+                ;;
+              merge)
+                echo "Creating merge commit..."
+                git merge upstream/$DEFAULT_BRANCH --no-ff -m "Merge upstream/$DEFAULT_BRANCH into fork"
+                ;;
+              *)
+                echo "❌ Unknown sync strategy: $SYNC_STRATEGY"
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "📤 Pushing to fork..."
+          # Always use force-with-lease for rebase and force strategies
+          # (including when rebase falls back to force due to conflicts)
+          if [ "$SYNC_STRATEGY" = "force" ] || [ "$SYNC_STRATEGY" = "rebase" ]; then
+            git push origin $DEFAULT_BRANCH --force-with-lease
+          else
+            git push origin $DEFAULT_BRANCH
+          fi
+
+      - name: Process and push tags
+        run: |
+          # Determine which tag prefixes to use
+          TAG_PREFIXES="${{ github.event.inputs.tag_prefixes || env.DEFAULT_TAG_PREFIXES }}"
+
+          echo "🏷️ Processing tag prefixes: $TAG_PREFIXES"
+
+          # Convert comma-separated list to array
+          IFS=',' read -ra PREFIXES <<< "$TAG_PREFIXES"
+
+          # Process each tag prefix
+          for tagPrefix in "${PREFIXES[@]}"; do
+            # Trim whitespace
+            tagPrefix=$(echo "$tagPrefix" | xargs)
+
+            echo ""
+            echo "Processing tags matching: $tagPrefix"
+            echo "========================================="
+
+            # Get all tags from upstream matching the prefix
+            TAGS_TO_PUSH=$(git tag -l "$tagPrefix" | \
+              grep -v -E "(beta|preview|rc|alpha)" | \
+              grep -E "_[0-9]+\.[0-9]+\.[0-9]+$" | \
+              sort -t'_' -k1,1 -k2,2V | \
+              awk -F'[_.]' '{
+                  prefix = $1
+                  current = prefix "_" $2 "." $3
+                  if (current != prev) {
+                      if (prev) print last
+                      prev = current
+                  }
+                  last = $0
+              }
+              END { if (prev) print last }')
+
+            if [ -z "$TAGS_TO_PUSH" ]; then
+              echo "No tags found matching criteria for prefix: $tagPrefix"
+              continue
+            fi
+
+            echo "Tags to push:"
+            echo "$TAGS_TO_PUSH"
+
+            # Push each tag
+            while IFS= read -r tag; do
+              echo "Pushing tag: $tag"
+              if git push origin "refs/tags/$tag:refs/tags/$tag" 2>&1 | tee /tmp/push_output; then
+                if grep -q "Everything up-to-date\|\[up to date\]" /tmp/push_output; then
+                  echo "  ✓ Tag already exists"
+                else
+                  echo "  ✅ Tag pushed successfully"
+                fi
+              else
+                echo "  ⚠️ Failed to push tag $tag"
+              fi
+            done <<< "$TAGS_TO_PUSH"
+          done
+
+          echo ""
+          echo "✅ Tag sync completed!"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 📊 Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner**: ${{ github.event.inputs.runs_on || 'ubuntu-latest' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Sync Strategy**: ${{ github.event.inputs.sync_strategy || 'rebase' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag Prefixes**: ${{ github.event.inputs.tag_prefixes || env.DEFAULT_TAG_PREFIXES }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Authentication**: ${{ secrets.PAT && 'PAT' || 'GITHUB_TOKEN' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # List recent tags that were processed
+          echo "### 🏷️ Recent Tags" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          git tag --sort=-version:refname | head -20 >> $GITHUB_STEP_SUMMARY || echo "No tags found" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
