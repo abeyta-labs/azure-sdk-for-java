@@ -52,7 +52,7 @@ on:
 
 env:
   # Default tag prefixes - can be overridden by workflow_dispatch input
-  DEFAULT_TAG_PREFIXES: 'azure-core-http-netty_*,azure-identity_*'
+  DEFAULT_TAG_PREFIXES: 'azure-core-http-netty_*,azure-identity_*,azure-security-keyvault-keys_*'
 
 jobs:
   sync-fork-and-tags:
