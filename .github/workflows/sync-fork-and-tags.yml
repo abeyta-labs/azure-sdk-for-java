@@ -126,42 +126,42 @@ jobs:
           echo "Default branch: $DEFAULT_BRANCH"
 
           # Checkout the default branch
-          git checkout $DEFAULT_BRANCH
+          git checkout "$DEFAULT_BRANCH"
 
           # Determine sync strategy
           SYNC_STRATEGY="${{ github.event.inputs.sync_strategy || 'rebase' }}"
           echo "Using sync strategy: $SYNC_STRATEGY"
 
           # Check if we can fast-forward
-          if git merge-base --is-ancestor upstream/$DEFAULT_BRANCH HEAD; then
+          if git merge-base --is-ancestor "upstream/$DEFAULT_BRANCH" HEAD; then
             echo "✅ Fork is ahead or equal to upstream, no sync needed for $DEFAULT_BRANCH"
-          elif git merge-base --is-ancestor HEAD upstream/$DEFAULT_BRANCH; then
+          elif git merge-base --is-ancestor HEAD "upstream/$DEFAULT_BRANCH"; then
             echo "⏩ Fast-forwarding to upstream/$DEFAULT_BRANCH..."
-            git merge upstream/$DEFAULT_BRANCH --ff-only
+            git merge "upstream/$DEFAULT_BRANCH" --ff-only
           else
             echo "⚠️ Branches have diverged. Using strategy: $SYNC_STRATEGY"
 
             case "$SYNC_STRATEGY" in
               rebase)
                 echo "Rebasing fork commits on top of upstream..."
-                if git rebase upstream/$DEFAULT_BRANCH; then
+                if git rebase "upstream/$DEFAULT_BRANCH"; then
                   echo "✅ Rebase successful"
                 else
                   echo "❌ Rebase failed due to conflicts"
                   echo "Aborting rebase and falling back to force sync..."
                   git rebase --abort
                   echo "⚠️ Force syncing to match upstream (your commits will need to be reapplied)"
-                  git reset --hard upstream/$DEFAULT_BRANCH
+                  git reset --hard "upstream/$DEFAULT_BRANCH"
                 fi
                 ;;
               force)
                 echo "Force syncing to match upstream exactly..."
                 echo "⚠️ This will overwrite any unique commits in the fork!"
-                git reset --hard upstream/$DEFAULT_BRANCH
+                git reset --hard "upstream/$DEFAULT_BRANCH"
                 ;;
               merge)
                 echo "Creating merge commit..."
-                git merge upstream/$DEFAULT_BRANCH --no-ff -m "Merge upstream/$DEFAULT_BRANCH into fork"
+                git merge "upstream/$DEFAULT_BRANCH" --no-ff -m "Merge upstream/$DEFAULT_BRANCH into fork"
                 ;;
               *)
                 echo "❌ Unknown sync strategy: $SYNC_STRATEGY"
@@ -174,9 +174,9 @@ jobs:
           # Always use force-with-lease for rebase and force strategies
           # (including when rebase falls back to force due to conflicts)
           if [ "$SYNC_STRATEGY" = "force" ] || [ "$SYNC_STRATEGY" = "rebase" ]; then
-            git push origin $DEFAULT_BRANCH --force-with-lease
+            git push origin "$DEFAULT_BRANCH" --force-with-lease
           else
-            git push origin $DEFAULT_BRANCH
+            git push origin "$DEFAULT_BRANCH"
           fi
 
       - name: Process and push tags
