@@ -243,18 +243,18 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "## 📊 Sync Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Runner**: ${{ github.event.inputs.runs_on || 'ubuntu-latest' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Sync Strategy**: ${{ github.event.inputs.sync_strategy || 'rebase' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag Prefixes**: ${{ github.event.inputs.tag_prefixes || env.DEFAULT_TAG_PREFIXES }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Authentication**: ${{ secrets.PAT && 'PAT' || 'GITHUB_TOKEN' }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Sync Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Repository**: ${{ github.repository }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Runner**: ${{ github.event.inputs.runs_on || 'ubuntu-latest' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Trigger**: ${{ github.event_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Sync Strategy**: ${{ github.event.inputs.sync_strategy || 'rebase' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag Prefixes**: ${{ github.event.inputs.tag_prefixes || env.DEFAULT_TAG_PREFIXES }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Authentication**: ${{ secrets.PAT && 'PAT' || 'GITHUB_TOKEN' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
 
           # List recent tags that were processed
-          echo "### 🏷️ Recent Tags" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          git tag --sort=-version:refname | head -20 >> $GITHUB_STEP_SUMMARY || echo "No tags found" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏷️ Recent Tags" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          git tag --sort=-version:refname | head -20 >> "$GITHUB_STEP_SUMMARY" || echo "No tags found" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
