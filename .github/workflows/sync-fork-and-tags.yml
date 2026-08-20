@@ -14,7 +14,7 @@ name: Sync Fork and Push Tags
 # 2. Add the PAT to your fork's secrets:
 #    - Go to your fork's Settings > Secrets and variables > Actions
 #    - Click "New repository secret"
-#    - Name: PAT
+#    - Name: GH_PULL_REQUEST_TOKEN
 #    - Value: paste your personal access token
 #    - Click "Add secret"
 #
@@ -61,13 +61,13 @@ jobs:
     steps:
       - name: Check PAT Configuration
         run: |
-          if [ -z "${{ secrets.PAT }}" ]; then
+          if [ -z "${{ secrets.GH_PULL_REQUEST_TOKEN }}" ]; then
             echo "⚠️ WARNING: PAT secret is not configured!"
             echo "The workflow may fail if the upstream repository is private or has restricted access."
             echo ""
             echo "To fix this:"
             echo "1. Create a Personal Access Token at: https://github.com/settings/tokens/new"
-            echo "2. Add it as a secret named 'PAT' in your repository settings"
+            echo "2. Add it as a secret named 'GH_PULL_REQUEST_TOKEN' in your repository settings"
             echo ""
             echo "Attempting to continue with GITHUB_TOKEN..."
           else
@@ -78,7 +78,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: true
 
       - name: Configure git
@@ -87,7 +87,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Configure git to use the token for authentication
-          TOKEN="${{ secrets.PAT || secrets.GITHUB_TOKEN }}"
+          TOKEN="${{ secrets.GH_PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}"
           git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Add upstream remote
@@ -103,7 +103,7 @@ jobs:
 
           # Configure the upstream URL with authentication
           # Use PAT if available, otherwise fall back to GITHUB_TOKEN
-          TOKEN="${{ secrets.PAT || secrets.GITHUB_TOKEN }}"
+          TOKEN="${{ secrets.GH_PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}"
           UPSTREAM_URL="https://x-access-token:${TOKEN}@github.com/${UPSTREAM_REPO}.git"
 
           echo "Adding upstream remote: github.com/${UPSTREAM_REPO}"
@@ -113,7 +113,7 @@ jobs:
           echo "Current remotes:"
           git remote -v | sed 's|https://.*@|https://***@|g'
         env:
-          GH_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PULL_REQUEST_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Sync fork from upstream
         run: |
@@ -250,7 +250,7 @@ jobs:
           echo "- **Trigger**: ${{ github.event_name }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Sync Strategy**: ${{ github.event.inputs.sync_strategy || 'rebase' }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Tag Prefixes**: ${{ github.event.inputs.tag_prefixes || env.DEFAULT_TAG_PREFIXES }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Authentication**: ${{ secrets.PAT && 'PAT' || 'GITHUB_TOKEN' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Authentication**: ${{ secrets.GH_PULL_REQUEST_TOKEN && 'GH_PULL_REQUEST_TOKEN' || 'GITHUB_TOKEN' }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           # List recent tags that were processed
